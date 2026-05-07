@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineTool } from './defineTool.js';
-import { getTabList } from '../utils/browser.js';
+import { getTabList, attachPageListeners } from '../utils/browser.js';
 import { store } from '../store.js';
 
 const newTabTool = defineTool({
@@ -15,6 +15,7 @@ const newTabTool = defineTool({
     const { browser, logger } = ctx;
     try {
       const newPage = await browser!.newPage();
+      attachPageListeners(newPage);
       await newPage.goto(args.url, {
         waitUntil: [],
       });

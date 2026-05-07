@@ -31,6 +31,8 @@ import {
   screenshots,
   getScreenshots,
   registerResources,
+  consoleLogs,
+  networkRequests,
 } from './resources/index.js';
 import { store } from './store.js';
 import { BrowserContext } from './context.js';
@@ -183,6 +185,67 @@ export const toolsMap = defineTools({
           )}`,
         ),
     }),
+  },
+  browser_set_viewport: {
+    name: 'browser_set_viewport',
+    description:
+      'Set the browser viewport size in pixels. Use this to change the window resolution at runtime.',
+    inputSchema: z.object({
+      width: z.number().describe('Viewport width in pixels'),
+      height: z.number().describe('Viewport height in pixels'),
+      deviceScaleFactor: z
+        .number()
+        .optional()
+        .default(1)
+        .describe('Device scale factor (default: 1)'),
+    }),
+  },
+  browser_get_console_logs: {
+    name: 'browser_get_console_logs',
+    description:
+      'Get console logs from the browser. Returns all collected logs since page load.',
+    inputSchema: z.object({
+      filter: z
+        .string()
+        .optional()
+        .describe(
+          'Optional filter string to match against log content (case-insensitive)',
+        ),
+    }),
+  },
+  browser_get_network_requests: {
+    name: 'browser_get_network_requests',
+    description:
+      'Get network request history. Returns recently captured requests with their responses.',
+    inputSchema: z.object({
+      urlFilter: z
+        .string()
+        .optional()
+        .describe('Filter requests by URL substring (case-insensitive)'),
+      methodFilter: z
+        .string()
+        .optional()
+        .describe('Filter requests by HTTP method (e.g., GET, POST)'),
+      statusFilter: z
+        .number()
+        .optional()
+        .describe('Filter requests by HTTP status code'),
+      includeResponseBody: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe('Include response body in results (default: true)'),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe('Maximum number of results to return (default: 50)'),
+    }),
+  },
+  browser_clear_logs: {
+    name: 'browser_clear_logs',
+    description:
+      'Clear all collected console logs and network request history.',
   },
 });
 
@@ -670,6 +733,106 @@ const handleToolCall = async (
           isError: true,
         };
       }
+    },
+    browser_set_viewport: async (args) => {
+      try {
+        await page.setViewport({
+          width: args.width,
+          height: args.height,
+          deviceScaleFactor: args.deviceScaleFactor,
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Viewport set to ${args.width}x${args.height} (scale: ${args.deviceScaleFactor})`,
+            },
+          ],
+          isError: false,
+        };
+      } catch (error) {
+        logger.error(`Failed to browser_set_viewport`, error);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Failed to set viewport: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+    browser_get_console_logs: async (args) => {
+      let logs = consoleLogs;
+      if (args.filter) {
+        const filter = args.filter.toLowerCase();
+        logs = logs.filter((log) => log.toLowerCase().includes(filter));
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: logs.length > 0 ? logs.join('\n') : 'No console logs captured yet.',
+          },
+        ],
+        isError: false,
+      };
+    },
+    browser_get_network_requests: async (args) => {
+      let requests = networkRequests;
+
+      if (args.urlFilter) {
+        const filter = args.urlFilter.toLowerCase();
+        requests = requests.filter((r) => r.url.toLowerCase().includes(filter));
+      }
+      if (args.methodFilter) {
+        const method = args.methodFilter.toUpperCase();
+        requests = requests.filter((r) => r.method === method);
+      }
+      if (args.statusFilter) {
+        requests = requests.filter((r) => r.status === args.statusFilter);
+      }
+
+      // Take the most recent entries up to limit
+      const limit = args.limit ?? 50;
+      const sliced = requests.slice(-limit);
+
+      const summary = sliced.map((r) => {
+        const parts = [
+          `[${r.status || 'pending'}]`,
+          r.method,
+          r.url,
+          `(${r.resourceType})`,
+        ];
+        if (args.includeResponseBody && r.responseBody) {
+          parts.push(`\n  Response: ${r.responseBody.slice(0, 2000)}`);
+        }
+        return parts.join(' ');
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              summary.length > 0
+                ? summary.join('\n')
+                : 'No network requests captured.',
+          },
+        ],
+        isError: false,
+      };
+    },
+    browser_clear_logs: async () => {
+      consoleLogs.length = 0;
+      networkRequests.length = 0;
+      return {
+        content: [
+          { type: 'text', text: 'Console logs and network history cleared.' },
+        ],
+        isError: false,
+      };
     },
   };
 

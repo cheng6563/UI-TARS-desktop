@@ -13,7 +13,21 @@ const consoleLogs: string[] = [];
 const screenshots = new Map<string, string>();
 const getScreenshots = () => screenshots;
 
-export { consoleLogs, screenshots, getScreenshots };
+export interface NetworkRequestEntry {
+  url: string;
+  method: string;
+  status: number;
+  statusText: string;
+  requestHeaders: Record<string, string>;
+  responseHeaders: Record<string, string>;
+  responseBody: string;
+  timestamp: string;
+  resourceType: string;
+}
+
+const networkRequests: NetworkRequestEntry[] = [];
+
+export { consoleLogs, screenshots, getScreenshots, networkRequests };
 
 export const registerResources = (server: McpServer, ctx: ResourceContext) => {
   const { logger } = ctx;

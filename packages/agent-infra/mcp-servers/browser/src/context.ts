@@ -5,7 +5,7 @@
 import { Page } from 'puppeteer-core';
 import { store } from './store.js';
 import { ResourceContext, ToolContext } from './typings.js';
-import { ensureBrowser } from './utils/browser.js';
+import { ensureBrowser, attachPageListeners } from './utils/browser.js';
 import {
   getBuildDomTreeScript,
   parseNode,
@@ -35,8 +35,14 @@ export class BrowserContext {
         await popup.bringToFront();
         page = popup;
         store.globalPage = popup;
+        attachPageListeners(popup);
       }
     });
+
+    // Attach listeners to current page if not already done
+    if (page) {
+      attachPageListeners(page);
+    }
 
     return {
       page,

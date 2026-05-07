@@ -8,6 +8,65 @@ import fetch from 'cross-fetch';
 
 import { store } from '../store.js';
 import { ensureDirExists } from './file.js';
+import { consoleLogs, networkRequests, NetworkRequestEntry } from '../resources/index.js';
+
+// Track whether listeners are already registered per page
+const pageListenerKey = '__mcp_browser_listeners_attached__';
+
+export function attachPageListeners(page: Page) {
+  // @ts-expect-error custom flag on page instance
+  if (page[pageListenerKey]) return;
+  // @ts-expect-error
+  page[pageListenerKey] = true;
+
+  // Console log listener
+  page.on('console', (msg) => {
+    const location = msg.location();
+    const locStr = location.url ? ` (${location.url}:${location.lineNumber})` : '';
+    consoleLogs.push(`[${msg.type()}] ${msg.text()}${locStr}`);
+  });
+
+  // Network request/response listener
+  page.on('request', (request) => {
+    const entry: NetworkRequestEntry = {
+      url: request.url(),
+      method: request.method(),
+      status: 0,
+      statusText: '',
+      requestHeaders: request.headers(),
+      responseHeaders: {},
+      responseBody: '',
+      timestamp: new Date().toISOString(),
+      resourceType: request.resourceType(),
+    };
+    // @ts-expect-error store entry on request for response matching
+    request[pageListenerKey] = entry;
+  });
+
+  page.on('response', async (response) => {
+    // @ts-expect-error
+    const entry = response.request()[pageListenerKey] as NetworkRequestEntry | undefined;
+    if (!entry) return;
+
+    entry.status = response.status();
+    entry.statusText = response.statusText();
+    entry.responseHeaders = response.headers();
+
+    try {
+      const body = await response.text();
+      // Cap response body to 500KB to avoid memory issues
+      entry.responseBody = body.length > 500 * 1024 ? body.slice(0, 500 * 1024) + '\n...(truncated)' : body;
+    } catch {
+      entry.responseBody = '(response body unavailable)';
+    }
+
+    networkRequests.push(entry);
+    // Keep at most 500 entries
+    if (networkRequests.length > 500) {
+      networkRequests.splice(0, networkRequests.length - 500);
+    }
+  });
+}
 
 export const getCurrentPage = async (browser: Browser) => {
   const { logger } = store;
@@ -143,6 +202,10 @@ export async function ensureBrowser() {
     const pages = await store.globalBrowser?.pages();
     store.globalPage = pages?.[0];
     currTabsIdx = 0;
+    // Attach listeners to the initial page
+    if (store.globalPage) {
+      attachPageListeners(store.globalPage);
+    }
   } else {
     const { activePage, activePageId } = await getCurrentPage(
       store.globalBrowser,

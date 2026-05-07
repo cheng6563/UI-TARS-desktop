@@ -139,9 +139,8 @@ program
               process.env.DISPLAY ? `--display=${process.env.DISPLAY}` : '',
             ],
             defaultViewport: contextOptions.viewportSize ?? {
-              width: 0,
-              height: 0,
-              deviceScaleFactor: 0,
+              width: 1280,
+              height: 720,
             },
             ...(options.userDataDir && {
               userDataDir: options.userDataDir,
